@@ -1,7 +1,12 @@
-from fastapi import FastAPI, Depends
-from . import models
-from .database import engine, SessionLocal
+from fastapi import FastAPI, Depends , Response,status , HTTPException
+from . import models, schema , utils
+from .database import engine, get_db
 from sqlalchemy.orm import Session
+from typing import List
+
+from .routers import post, user , auth
+
+
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
@@ -9,15 +14,18 @@ models.Base.metadata.create_all(bind=engine)
 # Create FastAPI app
 app = FastAPI()
 
-# Dependency to get the database session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-# Test endpoint
-@app.get("/sqlalchemy")
-def test_posts(db: Session = Depends(get_db)):
-    return {"status": "success"}
+# This section is of user 
+
+app.include_router(post.router)
+
+# This is por post 
+
+app.include_router(user.router)
+
+# This is for the authentication route
+
+app.include_router(auth.router)
+
+
+
