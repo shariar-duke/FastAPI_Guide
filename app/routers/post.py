@@ -1,55 +1,70 @@
-from fastapi import FastAPI, Depends , Response, status , HTTPException , APIRouter
-from ..import models, schema , utils, oauth2
-from ..database import  get_db
+from fastapi import FastAPI, Depends, Response, status, HTTPException, APIRouter
+from ..import models, schema, utils, oauth2
+from ..database import get_db
 from sqlalchemy.orm import Session
-from typing import List , Optional
-import logging
+from typing import List, Optional
+from sqlalchemy import func
 
 
 router = APIRouter(
-    tags =["Posts"]
+    tags=["Posts"]
 )
 
-# the post request get all the posts from db
-@router.get("/posts" , response_model = List[schema.Post])
-def test_posts(db: Session = Depends(get_db), limit: int = 10, skip: int = 0, search: Optional[str] = ""):
-    print("I want to get the current user")
-    
-    # Correct query to query the entire Post model and apply the filter
-    posts = db.query(models.Post).filter(models.Post.title.contains(search)).limit(limit).offset(skip).all()
-    
-    return posts
+# the post request get all the posts from db response_model=List[schema.Post]
+
+
+@router.get("/posts", response_model=List[schema.PostOut])
+def get_posts(db: Session = Depends(get_db), limit: int = 10, skip: int = 0, search: Optional[str] = ""):
+    print("Fetching posts and their votes")
+
+    # get all the posts from the post
+    # posts = db.query(models.Post).filter(
+    #     models.Post.title.contains(search)).limit(limit).offset(skip).all()
+
+    # Join posts with votes
+    results = db.query(models.Post, func.count(models.Vote.post_id)).join(
+        models.Vote, models.Vote.post_id == models.Post.id, isouter=True
+    ).group_by(models.Post.id).all()
+
+    print(results)
+    # Prepare the response directly without Pydantic validation
+    posts_with_vote_counts = [
+        {"post": post, "vote_count": count} for post, count in results
+    ]
+
+    return posts_with_vote_counts
 
 
 # to create a new posts
-@router.post("/posts", status_code=status.HTTP_201_CREATED , response_model = schema.Post)
-def create_posts(post:schema.PostCreate , db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)): # type: ignore
- 
-   #print the current user id
-   print("I want to printt the current user")
-   print(current_user)
-   new_post = models.Post(user_id=current_user, **post.dict())
-   db.add(new_post)
-   db.commit()
-   db.refresh(new_post)
-   return  new_post
+@router.post("/posts", status_code=status.HTTP_201_CREATED, response_model=schema.Post)
+def create_posts(post: schema.PostCreate, db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):  # type: ignore
+
+    # print the current user id
+    print("I want to printt the current user")
+    print(current_user)
+    new_post = models.Post(user_id=current_user, **post.dict())
+    db.add(new_post)
+    db.commit()
+    db.refresh(new_post)
+    return new_post
 
 
 # to get a single data from the db :
 
-@router.get("/posts/{id}", response_model = schema.Post)
-def get_post(id:int , db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
+@router.get("/posts/{id}", response_model=schema.Post)
+def get_post(id: int, db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
     print("I want to printt the current user")
     print(current_user)
     post = db.query(models.Post).filter(models.Post.id == id).first()
-  
+
     if not post:
-        raise HTTPException(status_code = status.HTTP_404_NOT_FOUND , detail=f"post with id : {id} was not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"post with id : {id} was not found")
         # response.status_code = status.HTTP_404_NOT_FOUND
     return post
 
 
-# The delete operation 
+# The delete operation
 @router.delete("/posts/{id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(id: int, db: Session = Depends(get_db), current_user: int = Depends(oauth2.get_current_user)):
 
@@ -58,10 +73,12 @@ def delete_post(id: int, db: Session = Depends(get_db), current_user: int = Depe
 
     # Handle the case where the post is not found
     if post is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with id: {id} was not found")
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Post with id: {id} was not found")
+
     if post.user_id != current_user:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Not authorized to perform requested acton")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail=f"Not authorized to perform requested acton")
 
     # Delete the post from the database
     db.delete(post)
@@ -70,8 +87,10 @@ def delete_post(id: int, db: Session = Depends(get_db), current_user: int = Depe
     # Return a 204 No Content response
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-#update the post 
-@router.put("/posts/{id}", status_code=status.HTTP_200_OK , response_model = schema.Post)
+# update the post
+
+
+@router.put("/posts/{id}", status_code=status.HTTP_200_OK, response_model=schema.Post)
 def update_post(id: int, updated_post: schema.PostCreate, db: Session = Depends(get_db)):
 
     # Query to find the post by id
@@ -80,11 +99,12 @@ def update_post(id: int, updated_post: schema.PostCreate, db: Session = Depends(
 
     # Handle the case where the post is not found
     if post is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Post with id: {id} was not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Post with id: {id} was not found")
 
     # Update the post with new data
     post_query.update(updated_post.dict(), synchronize_session=False)
     db.commit()
 
     # Return the updated post
-    return  post_query.first()
+    return post_query.first()
